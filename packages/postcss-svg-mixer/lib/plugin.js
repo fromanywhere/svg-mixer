@@ -1,3 +1,6 @@
+const crypto = require('crypto');
+const fs = require('fs');
+
 const postcss = require('postcss');
 const merge = require('merge-options');
 const { Compiler, Sprite, StackSprite } = require('svg-mixer');
@@ -40,7 +43,7 @@ const defaultConfig = {
 module.exports = postcss.plugin(packageName, opts => {
   const { ctx, ...restOpts } = opts || {};
   const cfg = merge(defaultConfig, restOpts);
-  const { userSprite, spriteType } = cfg;
+  const { userSprite, spriteType, outputPath } = cfg;
   const compiler = !userSprite ? new Compiler(convertToCompilerOpts(cfg)) : null;
   const matcher = createMatcher(cfg.match);
   const isWebpack = !!(ctx && ctx.webpack && ctx.webpack.emitFile);
@@ -89,7 +92,14 @@ module.exports = postcss.plugin(packageName, opts => {
         // In webpack environment plugin produce `original_url?sprite_filename.svg`, and special loader
         // in pitching phase replace original url with sprite file name
         const q = stringifyQuery({ ...parsedQuery, spriteFilename });
-        spriteUrl = isWebpack ? `${path}?${q}` : spriteFilename;
+        if (isWebpack) {
+          spriteUrl = `${path}?${q}`;
+        } else if (outputPath) {
+          const hash = crypto.createHash('md5').update(spriteContent, 'utf8').digest('hex');
+          spriteUrl = `${spriteFilename}?${hash}`;
+        } else {
+          spriteUrl = spriteFilename;
+        }
       } else if (spriteType === StackSprite.TYPE) {
         spriteUrl = `${spriteFilename}#${symbol.id}`;
       }
@@ -116,6 +126,9 @@ module.exports = postcss.plugin(packageName, opts => {
     // Emit sprite file in webpack compilation assets
     if (isWebpack) {
       ctx.webpack.emitFile(spriteFilename, spriteContent);
+    }
+    if (outputPath) {
+      fs.writeFileSync(`${outputPath}${spriteFilename}`, spriteContent, 'utf8');
     }
   };
 });
